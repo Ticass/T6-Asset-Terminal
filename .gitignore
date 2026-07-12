@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+dist/
+Transit Decompiled/
+Transit IPAK DDS/
+release_test/
+*.7z
+*.zip
+*.user
+*.suo
+*.pdb
