@@ -5,8 +5,7 @@
 ![License](https://img.shields.io/badge/license-GPL--3.0-f5b942)
 
 A native Xbox 360 Call of Duty: Black Ops II IPAK-to-DDS extractor. The
-repository remains named `T6-Asset-Terminal`; **Crybaby's IPAK Extractor** is
-the application name.
+repository remains named `T6-Asset-Terminal`;
 
 ## Features
 
