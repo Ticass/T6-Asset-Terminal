@@ -102,4 +102,4 @@ size needs no fastfile edit, while one that changes size does.
 - Inline image extraction for zones (`AssetExtractor.RunZoneInline`).
 - DDS FourCC honours the GPU format byte, adding BC3 and BC5/DXN alongside BC1.
 - `repack-add` CLI verb for inserting new entries into a package.
-- Hoisted three `stackalloc`s out of loops in the metadata builders (CA2014).
+- Hoisted four `stackalloc`s out of loops in the metadata builders (CA2014).

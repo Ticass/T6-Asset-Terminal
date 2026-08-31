@@ -93,9 +93,10 @@ public static class IPakRepacker
         else if (metaChanged) metaSection = BuildMetadata(metaSection, meta);
 
         var idx = new MemoryStream();
+        Span<byte> entry = stackalloc byte[16];   // hoisted: stackalloc inside the loop grows the frame per iteration
         foreach (var e in index.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
         {
-            Span<byte> row = stackalloc byte[16];
+            Span<byte> row = entry;
             BinaryPrimitives.WriteUInt32BigEndian(row, e.NameHash);
             BinaryPrimitives.WriteUInt32BigEndian(row[4..], e.DataHash);
             BinaryPrimitives.WriteUInt32BigEndian(row[8..], e.Offset);
