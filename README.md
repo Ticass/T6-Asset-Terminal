@@ -16,6 +16,8 @@ repository remains named `T6-Asset-Terminal`;
 - Writes standard BC1, BC3 and BC5/DXN DDS textures.
 - Produces a clean output containing DDS files only.
 - Does not require fastfiles or decompressed-zone folders at runtime.
+- Builds the image catalog from the package's own metadata section, so any IPAK
+  that carries one can be extracted with no zone and no prepared catalog.
 - Repacks an IPAK, swapping individual images while every other entry is copied
   block-for-block. A repack with no swaps reproduces the source file byte for
   byte -- verified against all 179 IPAKs of a retail Xbox 360 install.
@@ -62,10 +64,18 @@ identity or intended scope of the tool. Its `zm_transit_tm.ipak` contains 803
 streamed mip-part entries which reconstruct into 257 complete DDS textures.
 All 803 parts and all resulting DDS files were used to verify the pipeline.
 
-The current packaged build embeds the verified Transit metadata catalog.
-Additional BO2 IPAKs need equivalent image metadata before their names,
-dimensions, GPU formats and mip grouping can be reconstructed reliably. The
-IPAK parser, decompressor and Xbox texture conversion are format-level code.
+The build embeds the verified Transit catalog, which still takes precedence for
+`zm_transit_tm.ipak`. Every other package is catalogued from its own metadata
+section (`iwi:`, `format:`, `size:`, `width:`, `height:`, `levels:`, `mip:` per
+streamed part), so no zone is needed to recover names, dimensions, GPU formats
+or mip grouping.
+
+Measured across all 183 IPAKs of a retail Xbox 360 install, `format:` is only
+ever DXT5, DXN, DXT1, DXT3, or one of four uncompressed forms totalling 818
+records out of 378k. Only the block-compressed four can be written as BC DDS;
+anything else is reported and skipped rather than written incorrectly. 26 of
+those 183 packages carry no metadata section at all -- index and data only --
+and nothing in them names their images, so those still need a zone.
 
 ## Build
 

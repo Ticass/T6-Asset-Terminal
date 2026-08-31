@@ -5,11 +5,29 @@ public static class AssetExtractor
 {
     public static ExtractionResult RunIPak(string ipakPath,string output,Action<string>? log=null,CancellationToken token=default)
     {
-        string full=Path.GetFullPath(output);if(Directory.Exists(full))Directory.Delete(full,true);Directory.CreateDirectory(full);using var ipak=new IPakReader(ipakPath);var images=LoadCatalog(Path.GetFileNameWithoutExtension(ipakPath));var lookup=ipak.Entries.ToDictionary(e=>(e.NameHash,e.DataHash));int ok=0,failed=0;log?.Invoke($"INDEX {ipak.Entries.Count} streamed parts");log?.Invoke($"GROUP {images.Count} complete textures");
+        string full=Path.GetFullPath(output);if(Directory.Exists(full))Directory.Delete(full,true);Directory.CreateDirectory(full);using var ipak=new IPakReader(ipakPath);var images=LoadCatalog(Path.GetFileNameWithoutExtension(ipakPath),ipak,log);var lookup=ipak.Entries.ToDictionary(e=>(e.NameHash,e.DataHash));int ok=0,failed=0;log?.Invoke($"INDEX {ipak.Entries.Count} streamed parts");log?.Invoke($"GROUP {images.Count} complete textures");
         foreach(var image in images){token.ThrowIfCancellationRequested();try{var parts=image.Parts.Where(p=>lookup.ContainsKey((image.NameHash,p.DataHash))).OrderByDescending(p=>p.Width*p.Height).ToList();if(parts.Count==0)continue;var bundles=new List<(byte[],int,int,int)>();for(int i=0;i<parts.Count;i++){var p=parts[i];int next=i+1<parts.Count?parts[i+1].LevelCount:0;bundles.Add((ipak.Extract(lookup[(image.NameHash,p.DataHash)]),p.Width,p.Height,Math.Max(1,p.LevelCount-next)));}DdsWriter.WriteBc(Path.Combine(full,Safe(image.Name)+".dds"),parts[0].Width,parts[0].Height,parts[0].LevelCount,image.Semantic==5?0xE:image.Format,bundles,image.GpuFormat);ok++;if(ok%25==0)log?.Invoke($"DDS   {ok}/{images.Count}");}catch(Exception e){failed++;log?.Invoke($"FAIL  {image.Name}: {e.Message}");}}
         log?.Invoke($"DONE  {ok} DDS textures  |  {failed} failed");return new(ok,0,failed);
     }
-    static IReadOnlyList<ZoneImage> LoadCatalog(string ipakName){string resource=$"T6AssetTool.Core.Catalogs.{ipakName}.json";using var s=typeof(AssetExtractor).Assembly.GetManifestResourceStream(resource)??throw new NotSupportedException($"No embedded image metadata catalog for {ipakName}.ipak");return System.Text.Json.JsonSerializer.Deserialize<List<ZoneImage>>(s)??throw new InvalidDataException("Invalid embedded catalog");}
+    /// <summary>
+    /// Image metadata for the package being opened. An embedded catalog wins where one exists
+    /// (those were built and verified against a zone), otherwise the catalog is derived from
+    /// the package's own metadata section -- see IPakCatalog -- so no fastfile is needed.
+    /// </summary>
+    static IReadOnlyList<ZoneImage> LoadCatalog(string ipakName,IPakReader ipak,Action<string>? log)
+    {
+        string resource=$"T6AssetTool.Core.Catalogs.{ipakName}.json";
+        using(var s=typeof(AssetExtractor).Assembly.GetManifestResourceStream(resource))
+            if(s is not null)
+            {
+                var embedded=System.Text.Json.JsonSerializer.Deserialize<List<ZoneImage>>(s)??throw new InvalidDataException("Invalid embedded catalog");
+                log?.Invoke($"CAT   embedded catalog for {ipakName}.ipak: {embedded.Count} images");
+                return embedded;
+            }
+        var built=IPakCatalog.FromPackage(ipak,log);
+        if(built.Count>0)return built;
+        throw new NotSupportedException($"{ipakName}.ipak carries no image metadata section, so nothing in the file names its images. Extract it with a matching zone instead.");
+    }
     public static ExtractionResult Run(string ipakPath,IEnumerable<string> zoneFiles,string output,Action<string>? log=null,CancellationToken token=default)
     {
         string full=Path.GetFullPath(output);if(Directory.Exists(full))Directory.Delete(full,true);string textureOut=Path.Combine(full,"textures"),materialOut=Path.Combine(full,"materials");Directory.CreateDirectory(textureOut);Directory.CreateDirectory(materialOut);
