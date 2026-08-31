@@ -107,9 +107,9 @@ public static class IPakRepacker
         if (added)
         {
             var rebuiltPairs = new MemoryStream();
+            Span<byte> row = stackalloc byte[8];   // hoisted: stackalloc inside the loop grows the frame per iteration
             foreach (var e in index.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
             {
-                Span<byte> row = stackalloc byte[8];
                 BinaryPrimitives.WriteUInt32BigEndian(row, e.NameHash);
                 BinaryPrimitives.WriteUInt32BigEndian(row[4..], e.DataHash);
                 rebuiltPairs.Write(row);
