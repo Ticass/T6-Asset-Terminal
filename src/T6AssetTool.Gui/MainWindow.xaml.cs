@@ -3,7 +3,7 @@ namespace T6AssetTool.Gui;
 
 public partial class MainWindow:Window
 {
- const string IPakFilter="Black Ops II Xbox IPAK|*.ipak";
+ const string IPakFilter="Black Ops II texture package (*.ipak)|*.ipak";
 
  public MainWindow()
  {
@@ -23,20 +23,20 @@ public partial class MainWindow:Window
  void ApplyMode()
  {
   bool repack=Repacking;
-  FolderLabel.Content=repack?"03  MODIFIED DDS DIRECTORY":"03  CLEAN DDS OUTPUT DIRECTORY";
+  FolderLabel.Content=repack?"03  FOLDER OF EDITED .DDS TEXTURES":"03  FOLDER TO SAVE .DDS TEXTURES INTO";
   RepackOutLabel.Visibility=RepackOutRow.Visibility=repack?Visibility.Visible:Visibility.Collapsed;
-  Execute.Content=repack?"▶  EXECUTE REPACK":"▶  EXECUTE EXTRACTION";
-  PolicyTitle.Text=repack?"REPACK POLICY":"OUTPUT POLICY";
+  Execute.Content=repack?"▶  REBUILD PACKAGE":"▶  EXTRACT TEXTURES";
+  PolicyTitle.Text="WHAT THIS DOES";
   PolicyText.Text=repack
-   ?"Every .dds in the directory replaces the entry whose name it matches; entries you did not touch are copied through byte for byte, so an untouched IPAK rebuilds identically. Name each file after the image it replaces."
-   :"The IPAK is grouped into complete textures and converted directly to named DDS files. No fastfiles or material extraction required.";
+   ?"Writes a new copy of the package with your textures swapped in. Each .dds replaces the texture of the same name; everything you did not touch is copied across untouched, so a rebuild with no edits produces an identical file. Name each .dds after the texture it replaces."
+   :"Rebuilds every texture in the package from its mip parts and writes them as named .dds files. Nothing but the .ipak itself is needed.\n\nThe folder you pick is emptied before writing.";
  }
 
  void PickPackage(){var d=new OpenFileDialog{Filter=IPakFilter};if(d.ShowDialog()==true)IPak.Text=d.FileName;}
 
  void PickFolder()
  {
-  using var d=new Forms.FolderBrowserDialog{Description=Repacking?"Select the directory of modified DDS files":"Select clean DDS output directory"};
+  using var d=new Forms.FolderBrowserDialog{Description=Repacking?"Folder holding your edited .dds textures":"Folder to save the extracted .dds textures into (it will be emptied)"};
   if(Directory.Exists(Output.Text))d.SelectedPath=Output.Text;
   if(d.ShowDialog()==Forms.DialogResult.OK)Output.Text=d.SelectedPath;
  }
@@ -59,17 +59,23 @@ public partial class MainWindow:Window
  {
   string ipakPath=IPak.Text,folder=Output.Text,rebuilt=RepackOut.Text;
   bool repack=Repacking;
-  if(!File.Exists(ipakPath)){MessageBox.Show("Select a valid Xbox 360 BO2 IPAK.","Input required");return;}
+  if(!File.Exists(ipakPath)){MessageBox.Show("Choose a Black Ops II .ipak texture package.","Input required");return;}
   if(repack)
   {
-   if(!Directory.Exists(folder)){MessageBox.Show("Select the directory holding your modified DDS files.","Input required");return;}
-   if(string.IsNullOrWhiteSpace(rebuilt)){MessageBox.Show("Choose where to write the rebuilt IPAK.","Input required");return;}
+   if(!Directory.Exists(folder)){MessageBox.Show("Choose the folder holding your edited .dds textures.","Input required");return;}
+   if(string.IsNullOrWhiteSpace(rebuilt)){MessageBox.Show("Choose where to save the rebuilt .ipak.","Input required");return;}
    if(string.Equals(Path.GetFullPath(rebuilt),Path.GetFullPath(ipakPath),StringComparison.OrdinalIgnoreCase))
-   {MessageBox.Show("The rebuilt IPAK must not overwrite the source package.","Input required");return;}
+   {MessageBox.Show("The rebuilt .ipak must not overwrite the package you are reading from.","Input required");return;}
+  }
+  // RunIPak deletes the output directory before writing, so say so before doing it.
+  if(!repack&&Directory.Exists(folder)&&Directory.EnumerateFileSystemEntries(folder).Any())
+  {
+   string warn="Everything in\n\n"+folder+"\n\nwill be deleted before the textures are written.\n\nContinue?";
+   if(MessageBox.Show(warn,"Folder will be emptied",MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;
   }
   Execute.IsEnabled=false;Progress.IsIndeterminate=true;
   Status.Text="PROCESSING";Status.Foreground=Brushes.Orange;StatusDot.Fill=Brushes.Orange;
-  Summary.Text=repack?"IPAK REPACK ACTIVE":"IPAK EXTRACTION ACTIVE";
+  Summary.Text=repack?"REBUILDING PACKAGE":"EXTRACTING TEXTURES";
   Log.Clear();
   try
   {
@@ -79,7 +85,7 @@ public partial class MainWindow:Window
    if(repack)
    {
     var r=await Task.Run(()=>{var swaps=IPakRepacker.FromFolder(folder,Say);return IPakRepacker.Repack(ipakPath,rebuilt,swaps,Say);});
-    summary=$"{r.Replaced} REPLACED / {r.Entries} ENTRIES";
+    summary=$"{r.Replaced} TEXTURES SWAPPED / {r.Entries} TOTAL";
    }
    else
    {

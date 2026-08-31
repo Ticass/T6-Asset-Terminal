@@ -1,3 +1,33 @@
+# Crybaby's IPAK Extractor v1.3.1
+
+## Plainer wording
+
+"Xbox 360 image package" read like a disc image. It is the game's **texture**
+package, so the interface now says so:
+
+| before | now |
+|---|---|
+| `02  XBOX 360 IMAGE PACKAGE` | `02  SOURCE .IPAK  (GAME TEXTURE PACKAGE)` |
+| `03  CLEAN DDS OUTPUT DIRECTORY` | `03  FOLDER TO SAVE .DDS TEXTURES INTO` |
+| `04  REBUILT IPAK FILE` | `04  REBUILT .IPAK TO WRITE` |
+| `EXECUTE EXTRACTION` | `EXTRACT TEXTURES` |
+| `EXECUTE REPACK` | `REBUILD PACKAGE` |
+| `LIVE PROCESS TELEMETRY` | `PROGRESS LOG` |
+| `OUTPUT POLICY` | `WHAT THIS DOES` |
+
+The file picker now offers *Black Ops II texture package (\*.ipak)* rather than
+"Black Ops II Xbox IPAK", and the prompts talk about textures and folders
+instead of packages and directories.
+
+## The output folder is emptied, and now says so
+
+Extraction has always deleted the output folder before writing -- the old label
+only hinted at it with the word "clean". It now states it, and if the folder you
+pick is not empty you get a confirmation naming the folder before anything is
+deleted.
+
+---
+
 # Crybaby's IPAK Extractor v1.3.0
 
 ## Any IPAK now catalogues itself
