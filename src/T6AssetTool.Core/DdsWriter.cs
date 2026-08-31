@@ -4,9 +4,9 @@ namespace T6AssetTool.Core;
 
 public static class DdsWriter
 {
-    public static void WriteBc(string path,int width,int height,int mipCount,int formatCode,IReadOnlyList<(byte[] Data,int Width,int Height,int Levels)> bundles)
+    public static void WriteBc(string path,int width,int height,int mipCount,int formatCode,IReadOnlyList<(byte[] Data,int Width,int Height,int Levels)> bundles,int gpuFormat=0)
     {
-        int low=formatCode&0x0F;string fourCc=low==0xB?"DXT1":low==0xE?"ATI2":"DXT5";int bpb=low==0xB?8:16;using var fs=File.Create(path);Span<byte> h=stackalloc byte[128];h.Clear();"DDS "u8.CopyTo(h);W(h,4,124);W(h,8,0x000A1007);W(h,12,(uint)height);W(h,16,(uint)width);W(h,20,(uint)(Math.Max(1,(width+3)/4)*bpb));W(h,28,(uint)mipCount);W(h,76,32);W(h,80,4);Encoding(fourCc).CopyTo(h[84..]);W(h,108,mipCount>1?0x401008u:0x1000u);fs.Write(h);
+        string fourCc=FourCc(formatCode,gpuFormat);int bpb=fourCc=="DXT1"?8:16;using var fs=File.Create(path);Span<byte> h=stackalloc byte[128];h.Clear();"DDS "u8.CopyTo(h);W(h,4,124);W(h,8,0x000A1007);W(h,12,(uint)height);W(h,16,(uint)width);W(h,20,(uint)(Math.Max(1,(width+3)/4)*bpb));W(h,28,(uint)mipCount);W(h,76,32);W(h,80,4);Encoding(fourCc).CopyTo(h[84..]);W(h,108,mipCount>1?0x401008u:0x1000u);fs.Write(h);
         foreach(var bundle in bundles)
         {
             int w=bundle.Width,hgt=bundle.Height;int levels=Math.Max(1,bundle.Levels);int src=0;
@@ -17,6 +17,10 @@ public static class DdsWriter
             }
         }
     }
+    /// <summary>Xenos format at GfxImage+0x4F when known, else the legacy +0x29 code.</summary>
+    static string FourCc(int formatCode,int gpuFormat)=>(gpuFormat&0x3F) switch{0x12=>"DXT1",0x13=>"DXT3",0x14=>"DXT5",0x1A or 0x1B=>"ATI2",
+        _=>(formatCode&0x0F) switch{0xB=>"DXT1",0xE=>"ATI2",_=>"DXT5"}};
+
     static byte[] Untile(ReadOnlySpan<byte> input,int widthBlocks,int heightBlocks,int bpb)
     {
         int log=bpb==8?3:4;byte[] dst=new byte[widthBlocks*heightBlocks*bpb];

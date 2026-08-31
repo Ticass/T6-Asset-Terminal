@@ -16,13 +16,44 @@ repository remains named `T6-Asset-Terminal`;
 - Writes standard BC1, BC3 and BC5/DXN DDS textures.
 - Produces a clean output containing DDS files only.
 - Does not require fastfiles or decompressed-zone folders at runtime.
+- Repacks an IPAK, swapping individual images while every other entry is copied
+  block-for-block. A repack with no swaps reproduces the source file byte for
+  byte -- verified against all 179 IPAKs of a retail Xbox 360 install.
 
 ## Usage
 
-1. Download and extract the complete Windows release ZIP.
-2. Run `Crybaby's IPAK Extractor.exe`.
-3. Select an Xbox 360 BO2 `.ipak` file and an output folder.
-4. Choose **Execute Extraction**.
+1. Download and extract the complete Windows release ZIP. Keep the DLLs beside
+   the executable.
+2. Run `Crybabys IPAK Extractor.exe`.
+3. Pick a mode:
+   - **Extract (IPAK to DDS)** -- choose an `.ipak` and an output folder, then
+     **Execute Extraction**.
+   - **Repack (DDS to IPAK)** -- choose the source `.ipak`, the folder holding
+     your modified `.dds` files, and where to write the rebuilt `.ipak`, then
+     **Execute Repack**.
+
+> The executable filename has no apostrophe. An apostrophe in the .NET assembly
+> name made WPF fail to parse its own compiled XAML, so v1.1.0 exited before it
+> could draw a window. The application title is unchanged.
+
+## Repacking
+
+Available in the GUI (**Repack** mode) and on the command line:
+
+```
+T6AssetTool.Cli repack <input.ipak> [swaps_dir] <output.ipak>
+```
+
+`swaps_dir` holds `<image_name>.dds` files; each name is hashed the way the game
+hashes it and matched against the index, then re-tiled into the Xbox layout. A
+`<namehash>:<datahash>.bin` file replaces one part's payload verbatim instead.
+
+Entries that are not being swapped are copied as stored, so the command modes
+this codebase cannot decode pass through untouched. Name hashes and data hashes
+are never rewritten -- the matching fastfile's streamed-part descriptors look
+images up by those, and the zone also carries each part's dimensions and level
+size, so a replacement that keeps the original size needs no fastfile edit while
+one that changes size does.
 
 ## Validation testbed
 

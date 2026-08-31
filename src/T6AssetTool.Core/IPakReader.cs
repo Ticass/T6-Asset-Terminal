@@ -5,6 +5,7 @@ using System.IO.Compression;
 namespace T6AssetTool.Core;
 
 public sealed record IPakEntry(uint NameHash, uint DataHash, uint Offset, uint StoredSize);
+public sealed record IPakSection(uint Type, uint Offset, uint Size, uint Count);
 
 public sealed class IPakReader : IDisposable
 {
@@ -13,16 +14,20 @@ public sealed class IPakReader : IDisposable
     readonly bool big;
     readonly uint dataOffset;
     public IReadOnlyList<IPakEntry> Entries { get; }
+    public IReadOnlyList<IPakSection> Sections { get; }
+    public bool BigEndian=>big;
+    public uint TotalSize { get; }
 
     public IPakReader(string path)
     {
         stream=File.Open(path,FileMode.Open,FileAccess.Read,FileShare.Read);
         Span<byte> h=stackalloc byte[16]; ReadExact(h);
         big=h[..4].SequenceEqual("IPAK"u8); if(!big && !h[..4].SequenceEqual("KAPI"u8)) throw new InvalidDataException("Not an IPAK file");
-        if(U32(h[4..])!=0x50000) throw new InvalidDataException("Unsupported IPAK version");
+        if(U32(h[4..])!=0x50000) throw new InvalidDataException("Unsupported IPAK version");TotalSize=U32(h[8..]);
         int sectionCount=checked((int)U32(h[12..])); uint indexOffset=0,indexCount=0; dataOffset=0;
-        Span<byte> s=stackalloc byte[16];
-        for(int i=0;i<sectionCount;i++){ReadExact(s);uint type=U32(s),off=U32(s[4..]),count=U32(s[12..]);if(type==1){indexOffset=off;indexCount=count;}else if(type==2)dataOffset=off;}
+        Span<byte> s=stackalloc byte[16];var sections=new List<IPakSection>(sectionCount);
+        for(int i=0;i<sectionCount;i++){ReadExact(s);uint type=U32(s),off=U32(s[4..]),size=U32(s[8..]),count=U32(s[12..]);sections.Add(new(type,off,size,count));if(type==1){indexOffset=off;indexCount=count;}else if(type==2)dataOffset=off;}
+        Sections=sections;
         if(indexOffset==0||dataOffset==0)throw new InvalidDataException("Missing IPAK data/index section");
         stream.Position=indexOffset; var entries=new List<IPakEntry>(checked((int)indexCount));
         for(int i=0;i<indexCount;i++){ReadExact(s);entries.Add(new(U32(s),U32(s[4..]),U32(s[8..]),U32(s[12..])));}
@@ -51,6 +56,12 @@ public sealed class IPakReader : IDisposable
         }
         return output.ToArray();
     }
+    /// <summary>The entry's stored block bytes exactly as they sit in the file, codec and all.</summary>
+    public byte[] ReadStored(IPakEntry entry){byte[] b=new byte[entry.StoredSize];stream.Position=dataOffset+entry.Offset;ReadExact(b);return b;}
+
+    /// <summary>Raw bytes of a whole section, used by the repacker to carry sections it does not rewrite.</summary>
+    public byte[] SectionBytes(uint type){var s=Sections.FirstOrDefault(x=>x.Type==type);if(s is null)return[];byte[] b=new byte[s.Size];stream.Position=s.Offset;ReadExact(b);return b;}
+
     uint U32(ReadOnlySpan<byte> b)=>big?BinaryPrimitives.ReadUInt32BigEndian(b):BinaryPrimitives.ReadUInt32LittleEndian(b);
     static byte[] DecompressLzo(byte[] input){using var source=new MemoryStream(input);using var lzo=new LzoStream(source,CompressionMode.Decompress);using var output=new MemoryStream();lzo.CopyTo(output);return output.ToArray();}
     void ReadExact(Span<byte> b){stream.ReadExactly(b);} void ReadExact(byte[] b){stream.ReadExactly(b);}

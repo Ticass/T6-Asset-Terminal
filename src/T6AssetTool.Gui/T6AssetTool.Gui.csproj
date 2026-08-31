@@ -1,1 +1,26 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>Crybaby's IPAK Extractor</AssemblyName></PropertyGroup><ItemGroup><ProjectReference Include="..\T6AssetTool.Core\T6AssetTool.Core.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- The assembly name must NOT contain an apostrophe. WPF compiles XAML to BAML that
+         records the owning assembly by name, and Baml2006SchemaContext.ResolveAssembly feeds
+         that string to System.Reflection.AssemblyName, whose parser treats ' as a quote
+         delimiter. "Crybaby's IPAK Extractor" therefore throws
+             XamlParseException -> FileLoadException: The given assembly name was invalid
+         from InitializeComponent, killing the process before any window appears
+         (exit code 0xE0434352). That is why v1.0.0 opened and v1.1.0 did not.
+         Branding lives in Product/AssemblyTitle and the window title instead. -->
+    <AssemblyName>Crybabys IPAK Extractor</AssemblyName>
+    <Product>Crybaby's IPAK Extractor</Product>
+    <AssemblyTitle>Crybaby's IPAK Extractor</AssemblyTitle>
+    <Version>1.2.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\T6AssetTool.Core\T6AssetTool.Core.csproj" />
+  </ItemGroup>
+</Project>
