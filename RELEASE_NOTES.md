@@ -1,3 +1,21 @@
+# Crybaby's IPAK Extractor v1.3.2
+
+## Simpler interface
+
+The step numbers are gone -- they ran 01/02/03/04 with a gap, since one field
+only appears in one mode -- and there is now one verb per direction instead of
+"extract" and "unpack" meaning the same thing.
+
+**Unpack:** `IPAK FILE` -> `SAVE TEXTURES TO` -> **UNPACK**
+
+**Repack:** `IPAK FILE` -> `TEXTURES TO PUT BACK` -> `SAVE NEW IPAK AS` -> **REPACK**
+
+`REBUILT IPAK FILE` is now `SAVE NEW IPAK AS`, matching the Save As dialog its
+Browse button actually opens. The explainer panel is two short lines rather than
+a paragraph.
+
+---
+
 # Crybaby's IPAK Extractor v1.3.1
 
 ## Plainer wording

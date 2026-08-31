@@ -23,27 +23,27 @@ public partial class MainWindow:Window
  void ApplyMode()
  {
   bool repack=Repacking;
-  FolderLabel.Content=repack?"03  FOLDER OF EDITED .DDS TEXTURES":"03  FOLDER TO SAVE .DDS TEXTURES INTO";
+  FolderLabel.Content=repack?"TEXTURES TO PUT BACK":"SAVE TEXTURES TO";
   RepackOutLabel.Visibility=RepackOutRow.Visibility=repack?Visibility.Visible:Visibility.Collapsed;
-  Execute.Content=repack?"▶  REBUILD PACKAGE":"▶  EXTRACT TEXTURES";
+  Execute.Content=repack?"▶  REPACK":"▶  UNPACK";
   PolicyTitle.Text="WHAT THIS DOES";
   PolicyText.Text=repack
-   ?"Writes a new copy of the package with your textures swapped in. Each .dds replaces the texture of the same name; everything you did not touch is copied across untouched, so a rebuild with no edits produces an identical file. Name each .dds after the texture it replaces."
-   :"Rebuilds every texture in the package from its mip parts and writes them as named .dds files. Nothing but the .ipak itself is needed.\n\nThe folder you pick is emptied before writing.";
+   ?"Writes a new IPAK with your textures swapped in. Each .dds replaces the texture of the same name, and anything you did not touch is copied across unchanged.\n\nName each .dds after the texture it replaces."
+   :"Turns every texture in the IPAK into a .dds file you can edit.\n\nThe folder you pick is emptied first.";
  }
 
  void PickPackage(){var d=new OpenFileDialog{Filter=IPakFilter};if(d.ShowDialog()==true)IPak.Text=d.FileName;}
 
  void PickFolder()
  {
-  using var d=new Forms.FolderBrowserDialog{Description=Repacking?"Folder holding your edited .dds textures":"Folder to save the extracted .dds textures into (it will be emptied)"};
+  using var d=new Forms.FolderBrowserDialog{Description=Repacking?"Folder holding the textures to put back":"Folder to save the textures into (it will be emptied)"};
   if(Directory.Exists(Output.Text))d.SelectedPath=Output.Text;
   if(d.ShowDialog()==Forms.DialogResult.OK)Output.Text=d.SelectedPath;
  }
 
  void PickRebuiltPackage()
  {
-  var d=new SaveFileDialog{Filter=IPakFilter,FileName=Path.GetFileName(IPak.Text)};
+  var d=new SaveFileDialog{Filter=IPakFilter,Title="Save new IPAK as",FileName=Path.GetFileName(IPak.Text)};
   if(d.ShowDialog()==true)RepackOut.Text=d.FileName;
  }
 
@@ -59,13 +59,13 @@ public partial class MainWindow:Window
  {
   string ipakPath=IPak.Text,folder=Output.Text,rebuilt=RepackOut.Text;
   bool repack=Repacking;
-  if(!File.Exists(ipakPath)){MessageBox.Show("Choose a Black Ops II .ipak texture package.","Input required");return;}
+  if(!File.Exists(ipakPath)){MessageBox.Show("Choose an IPAK file.","Input required");return;}
   if(repack)
   {
-   if(!Directory.Exists(folder)){MessageBox.Show("Choose the folder holding your edited .dds textures.","Input required");return;}
-   if(string.IsNullOrWhiteSpace(rebuilt)){MessageBox.Show("Choose where to save the rebuilt .ipak.","Input required");return;}
+   if(!Directory.Exists(folder)){MessageBox.Show("Choose the folder holding the textures to put back.","Input required");return;}
+   if(string.IsNullOrWhiteSpace(rebuilt)){MessageBox.Show("Choose where to save the new IPAK.","Input required");return;}
    if(string.Equals(Path.GetFullPath(rebuilt),Path.GetFullPath(ipakPath),StringComparison.OrdinalIgnoreCase))
-   {MessageBox.Show("The rebuilt .ipak must not overwrite the package you are reading from.","Input required");return;}
+   {MessageBox.Show("The new IPAK must not overwrite the one you are reading from.","Input required");return;}
   }
   // RunIPak deletes the output directory before writing, so say so before doing it.
   if(!repack&&Directory.Exists(folder)&&Directory.EnumerateFileSystemEntries(folder).Any())
@@ -75,7 +75,7 @@ public partial class MainWindow:Window
   }
   Execute.IsEnabled=false;Progress.IsIndeterminate=true;
   Status.Text="PROCESSING";Status.Foreground=Brushes.Orange;StatusDot.Fill=Brushes.Orange;
-  Summary.Text=repack?"REBUILDING PACKAGE":"EXTRACTING TEXTURES";
+  Summary.Text=repack?"REPACKING":"UNPACKING";
   Log.Clear();
   try
   {
