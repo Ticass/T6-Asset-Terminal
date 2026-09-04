@@ -9,10 +9,13 @@ repository remains named `T6-Asset-Terminal`;
 
 ## Features
 
-- Parses big-endian Xbox 360 BO2 IPAK headers, sections, indexes and blocks.
+- Parses BO2 IPAK headers, sections, indexes and blocks, preserving source
+  endian when repacking.
 - Decompresses LZO1X texture commands.
 - Groups streamed mip parts into complete images.
-- Removes Xbox 360 texture tiling and endian layout.
+- Reads BO2 IWI texture payloads directly when the IPAK stores standalone image
+  chunks.
+- Removes Xbox 360 texture tiling and endian layout for streamed raw mip parts.
 - Writes standard BC1, BC3 and BC5/DXN DDS textures.
 - Produces a clean output containing DDS files only.
 - Does not require fastfiles or decompressed-zone folders at runtime.
@@ -48,7 +51,9 @@ T6AssetTool.Cli repack <input.ipak> [swaps_dir] <output.ipak>
 ```
 
 `swaps_dir` holds `<image_name>.dds` files; each name is hashed the way the game
-hashes it and matched against the index, then re-tiled into the Xbox layout. A
+hashes it and matched against the index. Hash-named fallback files such as
+`hash_01234567_89abcdef.dds` target that exact index entry. DDS replacements
+are written back as BO2 IWI payloads for standalone IPAKs, while a
 `<namehash>:<datahash>.bin` file replaces one part's payload verbatim instead.
 
 Entries that are not being swapped are copied as stored, so the command modes
@@ -77,10 +82,10 @@ records out of 378k. Only the block-compressed four can be written as BC DDS;
 anything else is reported and skipped rather than written incorrectly.
 
 Some packages carry no metadata section at all -- index and data only. For those
-the extractor infers dimensions/mips from the decoded payload and writes
-hash-named files such as `hash_01234567_89abcdef.dds`. The original image names
-are not present in those IPAKs, and DXT5 versus DXN/ATI2 cannot always be
-distinguished from the package alone.
+the extractor parses each decoded BO2 IWI header and writes hash-named files
+such as `hash_01234567_89abcdef.dds`. The original image names are not present
+in those IPAKs, but width, height, mip count and BC format are read from the
+IWI payload instead of guessed from byte size.
 
 ## Build
 

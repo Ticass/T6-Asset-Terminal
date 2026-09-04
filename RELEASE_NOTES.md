@@ -1,3 +1,27 @@
+# Crybaby's IPAK Extractor v1.3.4
+
+## Fixed corrupted standalone IPAK extraction/repacking
+
+v1.3.3 decoded metadata-less IPAK entries but then treated the decoded BO2 IWI
+payload as raw tiled texture blocks. That produced noisy/corrupted DDS output.
+The fallback path now parses the `IWi` header directly, preserves DXT1/DXT3/DXT5
+and ATI2/DXN formats, and writes the DDS from the real image payload bytes.
+
+Repacking hash-named DDS files is fixed too. DDS replacements are wrapped back
+into BO2 IWI payloads, and rebuilt archives preserve the source IPAK endian
+instead of mixing a new big-endian header with copied little-endian data blocks.
+
+Verified on `zm_asylum.ipak`:
+
+- standalone extraction: **1144 DDS textures, 0 failed**
+- no-swap repack: **byte-identical to source**
+- one grown DDS replacement: rebuilt IPAK re-extracts **1144 DDS textures, 0 failed**
+- replaced DDS re-extracts **byte-identical to the DDS supplied**
+
+v1.3.3 is superseded by this release.
+
+---
+
 # Crybaby's IPAK Extractor v1.3.3
 
 ## Standalone extraction for metadata-less IPAKs

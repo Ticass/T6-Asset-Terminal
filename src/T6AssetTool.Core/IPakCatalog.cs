@@ -112,7 +112,7 @@ public static class IPakCatalog
     public static IReadOnlyList<ZoneImage> FromIndexOnly(IPakReader ipak, Action<string>? log = null)
     {
         var images = new List<ZoneImage>();
-        int failed = 0, ambiguous = 0;
+        int failed = 0;
 
         foreach (var entry in ipak.Entries.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
         {
@@ -125,66 +125,36 @@ public static class IPakCatalog
                 continue;
             }
 
-            var inferred = Infer(payload.Length);
-            if (inferred is null)
+            var iwi = ParseIwi(payload);
+            if (iwi is null)
             {
                 failed++;
-                log?.Invoke($"SKIP  {entry.NameHash:x8}:{entry.DataHash:x8}: cannot infer DDS shape from {payload.Length} bytes");
+                log?.Invoke($"SKIP  {entry.NameHash:x8}:{entry.DataHash:x8}: decoded payload is not a supported IWI texture");
                 continue;
             }
 
-            if (inferred.Value.Ambiguous) ambiguous++;
             string name = $"hash_{entry.NameHash:x8}_{entry.DataHash:x8}";
-            var part = new StreamedImagePart(inferred.Value.Levels, payload.Length, entry.DataHash,
-                                             inferred.Value.Width, inferred.Value.Height, 0,
+            var part = new StreamedImagePart(iwi.Value.Levels, payload.Length, entry.DataHash,
+                                             iwi.Value.Width, iwi.Value.Height, 0,
                                              payload.Length, 0, true);
-            images.Add(new ZoneImage(name, entry.NameHash, 0, 0, inferred.Value.Width, inferred.Value.Height,
-                                     1, inferred.Value.Levels, payload.Length, false, [part], 0,
-                                     inferred.Value.GpuFormat));
+            images.Add(new ZoneImage(name, entry.NameHash, 0, 0, iwi.Value.Width, iwi.Value.Height,
+                                     1, iwi.Value.Levels, payload.Length, false, [part], 0,
+                                     iwi.Value.GpuFormat));
         }
 
         log?.Invoke($"CAT   {images.Count} hash-named images inferred from IPAK index only"
-                    + (ambiguous > 0 ? $"  |  {ambiguous} DXT5/DXN ambiguous, wrote DXT5" : "")
                     + (failed > 0 ? $"  |  {failed} skipped" : ""));
         return images;
     }
 
-    static (int Width, int Height, int Levels, int GpuFormat, bool Ambiguous)? Infer(int payloadLength)
+    static (int Width, int Height, int Levels, int GpuFormat)? ParseIwi(byte[] payload)
     {
-        if (payloadLength <= 64) return null;
-
-        var candidates = new List<(int Width, int Height, int Levels, int GpuFormat, bool Ambiguous, int Score)>();
-        int[] dims = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-        foreach (int bpb in new[] { 16, 8 })
-        foreach (int width in dims)
-        foreach (int height in dims)
-        {
-            int maxLevels = 1 + (int)Math.Log2(Math.Max(width, height));
-            int tightTotal = 64;
-            int pageTotal = 0;
-            for (int levels = 1; levels <= maxLevels; levels++)
-            {
-                int lw = Math.Max(1, width >> (levels - 1));
-                int lh = Math.Max(1, height >> (levels - 1));
-                int linear = Math.Max(1, (lw + 3) / 4) * Math.Max(1, (lh + 3) / 4) * bpb;
-                tightTotal += linear;
-                pageTotal += (linear + 0xfff) & ~0xfff;
-                if (tightTotal == payloadLength || pageTotal == payloadLength)
-                {
-                    int aspect = Math.Abs((int)Math.Round(Math.Log2((double)width / height) * 100.0));
-                    int area = width * height;
-                    int formatPenalty = bpb == 16 ? 0 : 50;
-                    int mipPenalty = levels == maxLevels ? 0 : 25;
-                    int score = aspect + formatPenalty + mipPenalty - Math.Min(area, 1 << 20) / 4096;
-                    candidates.Add((width, height, levels, bpb == 8 ? 0x12 : 0x14, bpb == 16, score));
-                }
-                if (tightTotal > payloadLength && pageTotal > payloadLength) break;
-            }
-        }
-
-        if (candidates.Count == 0) return null;
-        var best = candidates.OrderBy(c => c.Score).ThenByDescending(c => c.Width * c.Height).First();
-        return (best.Width, best.Height, best.Levels, best.GpuFormat, best.Ambiguous);
+        if (payload.Length <= 64 || payload[0] != 0x49 || payload[1] != 0x57 || payload[2] != 0x69) return null;
+        int gpuFormat = payload[4] switch { 0x0B => 0x12, 0x0C => 0x13, 0x0D => 0x14, 0x0E => 0x1A, _ => 0 };
+        if (gpuFormat == 0) return null;
+        int width = payload[6] | (payload[7] << 8), height = payload[8] | (payload[9] << 8);
+        if (width <= 0 || height <= 0) return null;
+        return (width, height, Math.Max(1, 1 + (int)Math.Log2(Math.Max(width, height))), gpuFormat);
     }
 
     static (string Name, string Format, int Size, int Width, int Height, int Levels, int Mip)?

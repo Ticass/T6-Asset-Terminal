@@ -6,6 +6,7 @@ public static class DdsWriter
 {
     public static void WriteBc(string path,int width,int height,int mipCount,int formatCode,IReadOnlyList<(byte[] Data,int Width,int Height,int Levels)> bundles,int gpuFormat=0)
     {
+        if(bundles.Count==1&&IsIwi(bundles[0].Data)){WriteIwi(path,bundles[0].Data);return;}
         string fourCc=FourCc(formatCode,gpuFormat);int bpb=fourCc=="DXT1"?8:16;using var fs=File.Create(path);Span<byte> h=stackalloc byte[128];h.Clear();"DDS "u8.CopyTo(h);W(h,4,124);W(h,8,0x000A1007);W(h,12,(uint)height);W(h,16,(uint)width);W(h,20,(uint)(Math.Max(1,(width+3)/4)*bpb));W(h,28,(uint)mipCount);W(h,76,32);W(h,80,4);Encoding(fourCc).CopyTo(h[84..]);W(h,108,mipCount>1?0x401008u:0x1000u);fs.Write(h);
         foreach(var bundle in bundles)
         {
@@ -27,6 +28,16 @@ public static class DdsWriter
             }
         }
     }
+    static bool IsIwi(byte[] data)=>data.Length>64&&data[0]==0x49&&data[1]==0x57&&data[2]==0x69;
+    static void WriteIwi(string path,byte[] data)
+    {
+        int width=data[6]|(data[7]<<8),height=data[8]|(data[9]<<8),format=data[4];
+        string fourCc=format switch{0x0B=>"DXT1",0x0C=>"DXT3",0x0D=>"DXT5",0x0E=>"ATI2",_=>"DXT5"};
+        int bpb=fourCc=="DXT1"?8:16,mips=MaxMipCount(width,height);
+        using var fs=File.Create(path);Span<byte> h=stackalloc byte[128];h.Clear();"DDS "u8.CopyTo(h);W(h,4,124);W(h,8,0x000A1007);W(h,12,(uint)height);W(h,16,(uint)width);W(h,20,(uint)(Math.Max(1,(width+3)/4)*bpb));W(h,28,(uint)mips);W(h,76,32);W(h,80,4);Encoding(fourCc).CopyTo(h[84..]);W(h,108,mips>1?0x401008u:0x1000u);fs.Write(h);
+        fs.Write(data,64,data.Length-64);
+    }
+    static int MaxMipCount(int width,int height)=>Math.Max(1,1+(int)Math.Log2(Math.Max(width,height)));
     /// <summary>Xenos format at GfxImage+0x4F when known, else the legacy +0x29 code.</summary>
     static string FourCc(int formatCode,int gpuFormat)=>(gpuFormat&0x3F) switch{0x12=>"DXT1",0x13=>"DXT3",0x14=>"DXT5",0x1A or 0x1B=>"ATI2",
         _=>(formatCode&0x0F) switch{0xB=>"DXT1",0xE=>"ATI2",_=>"DXT5"}};

@@ -28,6 +28,14 @@ public static class IPakRepacker
         void Say(string m) { lines.Add(m); log?.Invoke(m); }
 
         using var src = new IPakReader(sourcePath);
+        if (replacements.Count == 0 && (additions is null || additions.Count == 0))
+        {
+            File.Copy(sourcePath, outputPath, overwrite: true);
+            Say($"DONE  {src.Entries.Count} entries, 0 replaced -> {Path.GetFileName(outputPath)}");
+            return new(src.Entries.Count, 0, lines);
+        }
+
+        bool bigEndian = src.BigEndian;
         byte[] data = src.SectionBytes(2), pairs = src.SectionBytes(4), metaSection = src.SectionBytes(3);
         var meta = ParseMetadata(metaSection);
         var index = src.Entries.OrderBy(e => e.Offset).ToList();   // file order, not the hash-sorted index order
@@ -40,7 +48,7 @@ public static class IPakRepacker
             byte[]? swap = replacements.GetValueOrDefault(exact) ?? replacements.GetValueOrDefault(loose);
             if (swap is null) continue;                            // untouched slots keep their original bytes
 
-            byte[] blocks = IPakWriter.EncodeBlocks(swap);
+            byte[] blocks = IPakWriter.EncodeBlocks(swap, bigEndian);
             int was = OriginalSize(src, e);
             if (was >= 0 && swap.Length != was)
             {
@@ -61,8 +69,9 @@ public static class IPakRepacker
                 // Outgrew its slot: park it past the end of the section on a 0x8000 boundary and
                 // leave the old bytes where they are -- nothing points at them any more.
                 int start = (data.Length + IPakWriter.SectionAlign - 1) & ~(IPakWriter.SectionAlign - 1);
+                int oldLength = data.Length;
                 Array.Resize(ref data, start + blocks.Length);
-                Array.Fill(data, SlotFiller, (int)e.StoredSize + (int)e.Offset, start - (int)e.Offset - (int)e.StoredSize);
+                if (start > oldLength) Array.Fill(data, SlotFiller, oldLength, start - oldLength);
                 blocks.CopyTo(data, start);
                 index[i] = e with { Offset = (uint)start };
                 Say($"MOVE  {exact}  relocated to 0x{start:X}");
@@ -77,7 +86,7 @@ public static class IPakRepacker
             if (index.Any(e => e.NameHash == add.NameHash && e.DataHash == add.DataHash))
                 throw new InvalidDataException($"IPAK entry {add.NameHash:x8}:{add.DataHash:x8} already exists");
 
-            byte[] blocks = IPakWriter.EncodeBlocks(add.Data);
+            byte[] blocks = IPakWriter.EncodeBlocks(add.Data, bigEndian);
             int start = (data.Length + IPakWriter.SectionAlign - 1) & ~(IPakWriter.SectionAlign - 1);
             int oldLength = data.Length;
             Array.Resize(ref data, start + blocks.Length);
@@ -97,10 +106,10 @@ public static class IPakRepacker
         foreach (var e in index.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
         {
             Span<byte> row = entry;
-            BinaryPrimitives.WriteUInt32BigEndian(row, e.NameHash);
-            BinaryPrimitives.WriteUInt32BigEndian(row[4..], e.DataHash);
-            BinaryPrimitives.WriteUInt32BigEndian(row[8..], e.Offset);
-            BinaryPrimitives.WriteUInt32BigEndian(row[12..], e.StoredSize);
+            WriteUInt32(row, e.NameHash, bigEndian);
+            WriteUInt32(row[4..], e.DataHash, bigEndian);
+            WriteUInt32(row[8..], e.Offset, bigEndian);
+            WriteUInt32(row[12..], e.StoredSize, bigEndian);
             idx.Write(row);
         }
         byte[] indexSection = idx.ToArray();
@@ -111,8 +120,8 @@ public static class IPakRepacker
             Span<byte> row = stackalloc byte[8];   // hoisted: stackalloc inside the loop grows the frame per iteration
             foreach (var e in index.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
             {
-                BinaryPrimitives.WriteUInt32BigEndian(row, e.NameHash);
-                BinaryPrimitives.WriteUInt32BigEndian(row[4..], e.DataHash);
+                WriteUInt32(row, e.NameHash, bigEndian);
+                WriteUInt32(row[4..], e.DataHash, bigEndian);
                 rebuiltPairs.Write(row);
             }
             pairs = rebuiltPairs.ToArray();
@@ -124,16 +133,16 @@ public static class IPakRepacker
             .Select(s => (s.Type, s.Offset, Body: bodies.GetValueOrDefault(s.Type) ?? src.SectionBytes(s.Type),
                           Count: added && s.Type is 1 or 2 or 3 or 4 ? (uint)index.Count : s.Count))
             .ToList();
-        if (!IPakWriter.TryWriteAt(outputPath, layout, src.TotalSize))
+        if (!IPakWriter.TryWriteAt(outputPath, layout, src.TotalSize, bigEndian))
         {
             Say("GREW  a section outgrew its slot; rebuilding the file with a fresh 0x8000-aligned layout");
-            IPakWriter.WriteRelaid(outputPath, layout);
+            IPakWriter.WriteRelaid(outputPath, layout, bigEndian);
         }
         Say($"DONE  {index.Count} entries, {replaced} replaced -> {Path.GetFileName(outputPath)}");
         return new(index.Count, replaced, lines);
     }
 
-    /// <summary>Reads a DDS written by <see cref="DdsWriter"/> back into a tiled Xbox payload.</summary>
+    /// <summary>Reads a DDS written by <see cref="DdsWriter"/> back into an Xbox IWI payload.</summary>
     public static byte[] DdsToPayload(string ddsPath)
     {
         byte[] dds = File.ReadAllBytes(ddsPath);
@@ -141,7 +150,7 @@ public static class IPakRepacker
         int height = (int)L(dds, 12), width = (int)L(dds, 16), mips = Math.Max(1, (int)L(dds, 28));
         string fourCc = Encoding.ASCII.GetString(dds, 84, 4);
         if (fourCc is not ("DXT1" or "DXT5" or "ATI2")) throw new NotSupportedException($"Unsupported DDS format {fourCc}");
-        return XboxTiler.Tile(dds.AsSpan(128), width, height, mips, fourCc == "DXT1" ? 8 : 16);
+        return BuildIwi(dds.AsSpan(128), width, height, mips, fourCc);
     }
 
     /// <summary>Collects replacements from a folder of &lt;name&gt;.dds files, resolving names to hashes.</summary>
@@ -152,13 +161,55 @@ public static class IPakRepacker
         {
             string name = Path.GetFileNameWithoutExtension(file), ext = Path.GetExtension(file).ToLowerInvariant();
             if (ext == ".dds")
-            { map[$"{ZoneImageScanner.HashName(name):x8}"] = DdsToPayload(file); log?.Invoke($"LOAD  {name}.dds -> {ZoneImageScanner.HashName(name):x8}"); }
+            {
+                byte[] payload = DdsToPayload(file);
+                if (TryFallbackHashName(name, out string exact))
+                { map[exact] = payload; log?.Invoke($"LOAD  {name}.dds -> {exact}"); }
+                else
+                { map[$"{ZoneImageScanner.HashName(name):x8}"] = payload; log?.Invoke($"LOAD  {name}.dds -> {ZoneImageScanner.HashName(name):x8}"); }
+            }
             else if (ext == ".bin" && name.Contains(':'))
             { map[name.ToLowerInvariant()] = File.ReadAllBytes(file); log?.Invoke($"LOAD  {name}.bin (raw payload)"); }
             else if (ext == ".bin")
             { map[$"{ZoneImageScanner.HashName(name):x8}"] = File.ReadAllBytes(file); log?.Invoke($"LOAD  {name}.bin -> {ZoneImageScanner.HashName(name):x8}"); }
         }
         return map;
+    }
+
+    static byte[] BuildIwi(ReadOnlySpan<byte> ddsPixels, int width, int height, int mipCount, string fourCc)
+    {
+        int bpb = fourCc == "DXT1" ? 8 : 16;
+        byte[] payload = new byte[64 + ddsPixels.Length];
+        "IWi"u8.CopyTo(payload);
+        payload[3] = 0x1B;
+        payload[4] = fourCc switch { "DXT1" => (byte)0x0B, "ATI2" => (byte)0x0E, _ => (byte)0x0D };
+        payload[6] = (byte)(width & 0xff); payload[7] = (byte)(width >> 8);
+        payload[8] = (byte)(height & 0xff); payload[9] = (byte)(height >> 8);
+        payload[10] = 1;
+        ddsPixels.CopyTo(payload.AsSpan(64));
+
+        for (int i = 0; i < 8; i++)
+        {
+            int tail = 0, w = Math.Max(1, width >> i), h = Math.Max(1, height >> i);
+            for (int level = i; level < mipCount; level++)
+            {
+                tail += Math.Max(1, (w + 3) / 4) * Math.Max(1, (h + 3) / 4) * bpb;
+                w = Math.Max(1, w / 2); h = Math.Max(1, h / 2);
+            }
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(32 + i * 4), (uint)(64 + tail));
+        }
+        return payload;
+    }
+
+    static bool TryFallbackHashName(string name, out string exact)
+    {
+        exact = "";
+        if (!name.StartsWith("hash_", StringComparison.OrdinalIgnoreCase) || name.Length != 22 || name[13] != '_') return false;
+        string a = name.Substring(5, 8), b = name.Substring(14, 8);
+        if (!uint.TryParse(a, System.Globalization.NumberStyles.HexNumber, null, out _) ||
+            !uint.TryParse(b, System.Globalization.NumberStyles.HexNumber, null, out _)) return false;
+        exact = $"{a.ToLowerInvariant()}:{b.ToLowerInvariant()}";
+        return true;
     }
 
     /// <summary>Decoded size of an entry, or -1 when the entry uses a command mode the reader cannot decode.</summary>
@@ -220,4 +271,9 @@ public static class IPakRepacker
 
     static uint B(byte[] b, int o) => BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(o, 4));
     static uint L(byte[] b, int o) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(o, 4));
+    static void WriteUInt32(Span<byte> b, uint value, bool bigEndian)
+    {
+        if (bigEndian) BinaryPrimitives.WriteUInt32BigEndian(b, value);
+        else BinaryPrimitives.WriteUInt32LittleEndian(b, value);
+    }
 }

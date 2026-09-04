@@ -81,7 +81,7 @@ public static class IPakWriter
     /// pack only round-trips to the same bytes if all of that is carried rather than recomputed.
     /// Returns false when a body no longer fits its slot; the caller should then relayout.
     /// </summary>
-    public static bool TryWriteAt(string path, IReadOnlyList<(uint Type, uint Offset, byte[] Body, uint Count)> sections, uint totalSize)
+    public static bool TryWriteAt(string path, IReadOnlyList<(uint Type, uint Offset, byte[] Body, uint Count)> sections, uint totalSize, bool bigEndian = true)
     {
         var sorted = sections.OrderBy(s => s.Offset).ToList();
         for (int i = 0; i < sorted.Count; i++)
@@ -91,31 +91,31 @@ public static class IPakWriter
         }
 
         using var fs = File.Create(path);
-        fs.Write("IPAK"u8);
-        W(fs, 0x00050000); W(fs, totalSize); W(fs, (uint)sections.Count);
-        foreach (var s in sections) { W(fs, s.Type); W(fs, s.Offset); W(fs, (uint)s.Body.Length); W(fs, s.Count); }
+        fs.Write(bigEndian ? "IPAK"u8 : "KAPI"u8);
+        W(fs, 0x00050000, bigEndian); W(fs, totalSize, bigEndian); W(fs, (uint)sections.Count, bigEndian);
+        foreach (var s in sections) { W(fs, s.Type, bigEndian); W(fs, s.Offset, bigEndian); W(fs, (uint)s.Body.Length, bigEndian); W(fs, s.Count, bigEndian); }
         foreach (var s in sorted) { PadTo(fs, s.Offset, Filler); fs.Write(s.Body); }
         PadTo(fs, totalSize, Filler);
         return true;
     }
 
     /// <summary>Writes the same sections with a freshly computed 0x8000-aligned layout.</summary>
-    public static void WriteRelaid(string path, IReadOnlyList<(uint Type, uint Offset, byte[] Body, uint Count)> sections)
+    public static void WriteRelaid(string path, IReadOnlyList<(uint Type, uint Offset, byte[] Body, uint Count)> sections, bool bigEndian = true)
     {
         using var fs = File.Create(path);
-        WriteSections(fs, sections.Select(s => (s.Type, s.Body, s.Count)).ToList());
+        WriteSections(fs, sections.Select(s => (s.Type, s.Body, s.Count)).ToList(), bigEndian);
     }
 
     /// <summary>Encodes a bare payload into the block chain an IPAK data section stores.</summary>
-    public static byte[] EncodeBlocks(byte[] payload)
+    public static byte[] EncodeBlocks(byte[] payload, bool bigEndian = true)
     {
         var s = new MemoryStream();
-        WriteBlocks(s, payload);
+        WriteBlocks(s, payload, bigEndian);
         return s.ToArray();
     }
 
     // --- header + section table, then each section on its own 0x8000 boundary ---
-    static void WriteSections(Stream output, List<(uint Type, byte[] Body, uint Count)> sections)
+    static void WriteSections(Stream output, List<(uint Type, byte[] Body, uint Count)> sections, bool bigEndian = true)
     {
         uint cursor = Align((uint)(16 + sections.Count * 16), SectionAlign);
         var offsets = new uint[sections.Count];
@@ -126,12 +126,12 @@ public static class IPakWriter
         }
 
         var head = new MemoryStream();
-        head.Write("IPAK"u8);
-        W(head, 0x00050000); W(head, cursor); W(head, (uint)sections.Count);
+        head.Write(bigEndian ? "IPAK"u8 : "KAPI"u8);
+        W(head, 0x00050000, bigEndian); W(head, cursor, bigEndian); W(head, (uint)sections.Count, bigEndian);
         for (int i = 0; i < sections.Count; i++)
         {
-            W(head, sections[i].Type); W(head, offsets[i]);
-            W(head, (uint)sections[i].Body.Length); W(head, sections[i].Count);
+            W(head, sections[i].Type, bigEndian); W(head, offsets[i], bigEndian);
+            W(head, (uint)sections[i].Body.Length, bigEndian); W(head, sections[i].Count, bigEndian);
         }
         head.Position = 0; head.CopyTo(output);
 
@@ -148,7 +148,7 @@ public static class IPakWriter
         $"iwi: images/{imageName}.iwi\nformat: {format}\noffset: 0\nsize: {size}\n" +
         $"width: {width}\nheight: {height}\nlevels: {levels}\nmip: {mip}\nmanual: 1";
 
-    static void WriteBlocks(Stream s, byte[] payload)
+    static void WriteBlocks(Stream s, byte[] payload, bool bigEndian = true)
     {
         int consumed = 0;
         do
@@ -158,11 +158,11 @@ public static class IPakWriter
             if (commands > 31) throw new InvalidDataException($"Block would need {commands} commands");
 
             long headerAt = s.Position;
-            W(s, (uint)(commands << 24 | consumed));           // 24-bit running offset inside this image
+            W(s, (uint)(commands << 24 | consumed), bigEndian); // 24-bit running offset inside this image
             for (int i = 0, left = take; i < commands; i++)
             {
                 int size = Math.Min(left, MaxCommand);
-                W(s, (uint)size);                              // mode 0 = stored uncompressed
+                W(s, (uint)size, bigEndian);                    // mode 0 = stored uncompressed
                 left -= size;
             }
             PadTo(s, headerAt + BlockHeader, 0);
@@ -175,4 +175,11 @@ public static class IPakWriter
     static uint Align(uint v, int a) => (uint)((v + a - 1) & ~(a - 1));
     static void PadTo(Stream s, long target, byte fill) { while (s.Position < target) s.WriteByte(fill); }
     static void W(Stream s, uint v) { Span<byte> b = stackalloc byte[4]; BinaryPrimitives.WriteUInt32BigEndian(b, v); s.Write(b); }
+    static void W(Stream s, uint v, bool bigEndian)
+    {
+        Span<byte> b = stackalloc byte[4];
+        if (bigEndian) BinaryPrimitives.WriteUInt32BigEndian(b, v);
+        else BinaryPrimitives.WriteUInt32LittleEndian(b, v);
+        s.Write(b);
+    }
 }
