@@ -18,6 +18,7 @@ repository remains named `T6-Asset-Terminal`;
 - Does not require fastfiles or decompressed-zone folders at runtime.
 - Builds the image catalog from the package's own metadata section, so any IPAK
   that carries one can be extracted with no zone and no prepared catalog.
+- Falls back to hash-named DDS extraction for IPAKs that carry no image metadata.
 - Repacks an IPAK, swapping individual images while every other entry is copied
   block-for-block. A repack with no swaps reproduces the source file byte for
   byte -- verified against all 179 IPAKs of a retail Xbox 360 install.
@@ -73,9 +74,13 @@ or mip grouping.
 Measured across all 183 IPAKs of a retail Xbox 360 install, `format:` is only
 ever DXT5, DXN, DXT1, DXT3, or one of four uncompressed forms totalling 818
 records out of 378k. Only the block-compressed four can be written as BC DDS;
-anything else is reported and skipped rather than written incorrectly. 26 of
-those 183 packages carry no metadata section at all -- index and data only --
-and nothing in them names their images, so those still need a zone.
+anything else is reported and skipped rather than written incorrectly.
+
+Some packages carry no metadata section at all -- index and data only. For those
+the extractor infers dimensions/mips from the decoded payload and writes
+hash-named files such as `hash_01234567_89abcdef.dds`. The original image names
+are not present in those IPAKs, and DXT5 versus DXN/ATI2 cannot always be
+distinguished from the package alone.
 
 ## Build
 

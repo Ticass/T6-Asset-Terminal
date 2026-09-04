@@ -1,3 +1,20 @@
+# Crybaby's IPAK Extractor v1.3.3
+
+## Standalone extraction for metadata-less IPAKs
+
+IPAKs such as `zm_asylum.ipak` no longer fail when they do not carry section-3
+image metadata. The extractor now falls back to the IPAK index and decoded
+payload size, writes hash-named DDS files, and does not require a matching
+fastfile/zone just to unpack textures.
+
+Because those packages do not store original image names, fallback files are
+named like `hash_01234567_89abcdef.dds`. DXT5 and DXN/ATI2 use the same block
+size, so ambiguous fallback entries are written as DXT5.
+
+Verified on `zm_asylum.ipak`: **1126 DDS textures, 0 write failures**.
+
+---
+
 # Crybaby's IPAK Extractor v1.3.2
 
 ## Simpler interface

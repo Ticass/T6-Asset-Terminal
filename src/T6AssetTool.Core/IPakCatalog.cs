@@ -31,8 +31,10 @@ namespace T6AssetTool.Core;
 /// forms totalling 818 records. Only the block-compressed four can be written as BC DDS;
 /// an image in any other format is reported and skipped rather than written incorrectly.
 ///
-/// 26 of those 183 packages carry no metadata section at all -- only index and data -- and
-/// nothing in the file names their images, so those still need a zone.
+/// Packages with no metadata section fall back to hash-named DDS output. Those
+/// packages do not carry original image names, and DXT5/DXN are indistinguishable
+/// from block size alone, but the extractor can still infer dimensions/mips from
+/// the IPAK payload and write editable DDS files without a zone.
 /// </summary>
 public static class IPakCatalog
 {
@@ -105,6 +107,84 @@ public static class IPakCatalog
                     + (unsupported > 0 ? $"  |  {unsupported} unsupported format" : "")
                     + (skipped > 0 ? $"  |  {skipped} unreadable" : ""));
         return images;
+    }
+
+    public static IReadOnlyList<ZoneImage> FromIndexOnly(IPakReader ipak, Action<string>? log = null)
+    {
+        var images = new List<ZoneImage>();
+        int failed = 0, ambiguous = 0;
+
+        foreach (var entry in ipak.Entries.OrderBy(e => e.NameHash).ThenBy(e => e.DataHash))
+        {
+            byte[] payload;
+            try { payload = ipak.Extract(entry); }
+            catch (Exception e)
+            {
+                failed++;
+                log?.Invoke($"SKIP  {entry.NameHash:x8}:{entry.DataHash:x8}: {e.Message}");
+                continue;
+            }
+
+            var inferred = Infer(payload.Length);
+            if (inferred is null)
+            {
+                failed++;
+                log?.Invoke($"SKIP  {entry.NameHash:x8}:{entry.DataHash:x8}: cannot infer DDS shape from {payload.Length} bytes");
+                continue;
+            }
+
+            if (inferred.Value.Ambiguous) ambiguous++;
+            string name = $"hash_{entry.NameHash:x8}_{entry.DataHash:x8}";
+            var part = new StreamedImagePart(inferred.Value.Levels, payload.Length, entry.DataHash,
+                                             inferred.Value.Width, inferred.Value.Height, 0,
+                                             payload.Length, 0, true);
+            images.Add(new ZoneImage(name, entry.NameHash, 0, 0, inferred.Value.Width, inferred.Value.Height,
+                                     1, inferred.Value.Levels, payload.Length, false, [part], 0,
+                                     inferred.Value.GpuFormat));
+        }
+
+        log?.Invoke($"CAT   {images.Count} hash-named images inferred from IPAK index only"
+                    + (ambiguous > 0 ? $"  |  {ambiguous} DXT5/DXN ambiguous, wrote DXT5" : "")
+                    + (failed > 0 ? $"  |  {failed} skipped" : ""));
+        return images;
+    }
+
+    static (int Width, int Height, int Levels, int GpuFormat, bool Ambiguous)? Infer(int payloadLength)
+    {
+        if (payloadLength <= 64) return null;
+
+        var candidates = new List<(int Width, int Height, int Levels, int GpuFormat, bool Ambiguous, int Score)>();
+        int[] dims = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
+        foreach (int bpb in new[] { 16, 8 })
+        foreach (int width in dims)
+        foreach (int height in dims)
+        {
+            int maxLevels = 1 + (int)Math.Log2(Math.Max(width, height));
+            int tightTotal = 64;
+            int pageTotal = 0;
+            for (int levels = 1; levels <= maxLevels; levels++)
+            {
+                int lw = Math.Max(1, width >> (levels - 1));
+                int lh = Math.Max(1, height >> (levels - 1));
+                int linear = Math.Max(1, (lw + 3) / 4) * Math.Max(1, (lh + 3) / 4) * bpb;
+                tightTotal += linear;
+                pageTotal += (linear + 0xfff) & ~0xfff;
+                if (tightTotal == payloadLength || pageTotal == payloadLength)
+                {
+                    int aspect = Math.Abs((int)Math.Round(Math.Log2((double)width / height) * 100.0));
+                    int area = width * height;
+                    int formatPenalty = bpb == 16 ? 0 : 50;
+                    int mipPenalty = levels == maxLevels ? 0 : 25;
+                    int score = aspect + formatPenalty + mipPenalty - Math.Min(area, 1 << 20) / 4096;
+                    candidates.Add((width, height, levels, bpb == 8 ? 0x12 : 0x14, bpb == 16, score));
+                }
+                if (tightTotal > payloadLength && pageTotal > payloadLength) break;
+            }
+        }
+
+        if (candidates.Count == 0) return null;
+        var best = candidates.OrderBy(c => c.Score).ThenByDescending(c => c.Width * c.Height).First();
+        return (best.Width, best.Height, best.Levels, best.GpuFormat, best.Ambiguous);
     }
 
     static (string Name, string Format, int Size, int Width, int Height, int Levels, int Mip)?

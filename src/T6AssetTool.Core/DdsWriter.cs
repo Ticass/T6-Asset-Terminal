@@ -9,11 +9,21 @@ public static class DdsWriter
         string fourCc=FourCc(formatCode,gpuFormat);int bpb=fourCc=="DXT1"?8:16;using var fs=File.Create(path);Span<byte> h=stackalloc byte[128];h.Clear();"DDS "u8.CopyTo(h);W(h,4,124);W(h,8,0x000A1007);W(h,12,(uint)height);W(h,16,(uint)width);W(h,20,(uint)(Math.Max(1,(width+3)/4)*bpb));W(h,28,(uint)mipCount);W(h,76,32);W(h,80,4);Encoding(fourCc).CopyTo(h[84..]);W(h,108,mipCount>1?0x401008u:0x1000u);fs.Write(h);
         foreach(var bundle in bundles)
         {
-            int w=bundle.Width,hgt=bundle.Height;int levels=Math.Max(1,bundle.Levels);int src=0;
+            int w=bundle.Width,hgt=bundle.Height;int levels=Math.Max(1,bundle.Levels);
+            int expectedLinear=0,expectedPaged=0,tw=w,th=hgt;
+            for(int level=0;level<levels;level++)
+            {
+                int linear=Math.Max(1,(tw+3)/4)*Math.Max(1,(th+3)/4)*bpb;
+                expectedLinear+=linear;expectedPaged+=(linear+0xfff)&~0xfff;
+                tw=Math.Max(1,tw/2);th=Math.Max(1,th/2);
+            }
+            int src=bundle.Data.Length>=expectedLinear+64?64:0;
+            bool tight=bundle.Data.Length-src>=expectedLinear&&bundle.Data.Length-src<expectedPaged;
             for(int level=0;level<levels;level++)
             {
                 int bw=Math.Max(1,(w+3)/4),bh=Math.Max(1,(hgt+3)/4),linear=bw*bh*bpb;int page=(linear+0xfff)&~0xfff;
                 if(src>=bundle.Data.Length)break;byte[] untiled=Untile(bundle.Data.AsSpan(src,Math.Min(page,bundle.Data.Length-src)),bw,bh,bpb);fs.Write(untiled,0,Math.Min(linear,untiled.Length));src+=page;w=Math.Max(1,w/2);hgt=Math.Max(1,hgt/2);
+                if(tight)src-=page-linear;
             }
         }
     }

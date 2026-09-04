@@ -26,7 +26,8 @@ public static class AssetExtractor
             }
         var built=IPakCatalog.FromPackage(ipak,log);
         if(built.Count>0)return built;
-        throw new NotSupportedException($"{ipakName}.ipak carries no image metadata section, so nothing in the file names its images. Extract it with a matching zone instead.");
+        log?.Invoke($"CAT   {ipakName}.ipak carries no image metadata section; using hash-named standalone fallback");
+        return IPakCatalog.FromIndexOnly(ipak,log);
     }
     public static ExtractionResult Run(string ipakPath,IEnumerable<string> zoneFiles,string output,Action<string>? log=null,CancellationToken token=default)
     {
